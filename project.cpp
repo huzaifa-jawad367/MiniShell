@@ -1,5 +1,3 @@
-// command_line_arguments.cpp  
-
 #include <iostream>
 #include <string.h>
 #include <unistd.h>
@@ -15,8 +13,8 @@
 
 
 using namespace std;
-void  StrTokenizer(char *line, char **argv);
-void  myExecvp(char **argv);
+void StrTokenizer(char *line, char **argv);
+void myExecvp(char **argv);
 int GetEnv();
 
 
@@ -33,8 +31,6 @@ int main() {
         StrTokenizer(input, argv);
         if (strcmp(argv[0], "exit") == 0) {
             break;
-        } else if (strcmp(argv[0], ">>") == 0) {
-            myExecvp(argv);
         } else if (strcmp(input, "\n") == 0) {
             continue;
         } else {
@@ -51,14 +47,15 @@ void myExecvp(char **argv) {
     pid = fork();
     if (pid == 0) {
         bool appendMode = false;
-        char* outFile;
-        
+        char* outFile = nullptr;
+        int pipefd[2] = {0, 0}; // Pipe file descriptors
+
         // Check for '>>' operator
         for (int i = 0; argv[i] != NULL; i++) {
-            if (strcmp(argv[i], ">>") == 0) { //to allow cat >> command
+            if (strcmp(argv[i], ">>") == 0) {
                 appendMode = true;
                 outFile = argv[i + 1];
-                argv[i] = NULL;
+                argv[i] = nullptr;
                 break;
             }
         }
@@ -69,8 +66,8 @@ void myExecvp(char **argv) {
 
             // Read user input until termination string is entered
             while (true) {
-                std::getline(std::cin, input); 
-                if (std::cin.eof()) { // allows user to enter ctrl + d to end user input 
+                std::getline(std::cin, input);
+                if (std::cin.eof()) {
                     break;
                 }
                 file << input << std::endl;
@@ -78,11 +75,56 @@ void myExecvp(char **argv) {
             file.close();
             exit(0);
         } else {
-            childStatus = execvp(*argv, argv);
-            if (childStatus < 0) {
-                cout << "ERROR: wrong input" << endl;
+            // Check for pipe operator '|'
+            for (int i = 0; argv[i] != nullptr; i++) {
+                if (strcmp(argv[i], "|") == 0) {
+                    argv[i] = nullptr;
+
+                    // Create pipe
+                    if (pipe(pipefd) == -1) {
+                        perror("pipe");
+                        exit(1);
+                    }
+
+                    pid_t childpid;
+                    childpid = fork();
+                    if (childpid == 0) {
+                        // Child process
+
+                        // Close read end of the pipe
+                        close(pipefd[0]);
+
+                        // Duplicate the write end of the pipe to stdout
+                        dup2(pipefd[1], STDOUT_FILENO);
+                        close(pipefd[1]);
+
+                        execvp(argv[0], argv);
+                        perror("execvp");
+                        exit(1);
+                    } else if (childpid > 0) {
+                        // Parent process
+
+                        // Close write end of the pipe
+                        close(pipefd[1]);
+
+                        // Duplicate the read end of the pipe to stdin
+                        dup2(pipefd[0], STDIN_FILENO);
+                        close(pipefd[0]);
+
+                        execvp(argv[i + 1], &argv[i + 1]);
+                        perror("execvp");
+                        exit(1);
+                    } else {
+                        perror("fork");
+                        exit(1);
+                    }
+                }
             }
-            exit(0);
+
+            // Execute a single command if no pipe is present
+            execvp(argv[0], argv);
+            perror("execvp");
+            exit(1);
         }
     } else if (pid < 0) {
         cout << "something went wrong!" << endl;
@@ -94,30 +136,30 @@ void myExecvp(char **argv) {
 
 void StrTokenizer(char *input, char **argv)
 {
-	char *stringTokenized;
-	stringTokenized = strtok(input, " ");
-	while(stringTokenized != NULL)
-	{
-		*argv++  = stringTokenized;
-		stringTokenized = strtok(NULL, " ");
-	}
+    char *stringTokenized;
+    stringTokenized = strtok(input, " ");
+    while(stringTokenized != NULL)
+    {
+        *argv++  = stringTokenized;
+        stringTokenized = strtok(NULL, " ");
+    }
 
-	*argv = NULL;
+    *argv = NULL;
 }
 
 int GetEnv()
 {
-	char *path2;
-	char *arr2[250];
-	char *Tokenized ;
-	path2 = getenv("PATH");
-	Tokenized = strtok(path2, ":");
-	int k = 0;
-	while(Tokenized != NULL)
-	{
-		arr2[k] = Tokenized;
-		Tokenized = strtok(NULL, ":");
-		k++;
-	}
-	arr2[k] = NULL;
+    char *path2;
+    char *arr2[250];
+    char *Tokenized ;
+    path2 = getenv("PATH");
+    Tokenized = strtok(path2, ":");
+    int k = 0;
+    while(Tokenized != NULL)
+    {
+        arr2[k] = Tokenized;
+        Tokenized = strtok(NULL, ":");
+        k++;
+    }
+    arr2[k] = NULL;
 }
