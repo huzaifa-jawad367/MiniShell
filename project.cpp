@@ -7,6 +7,7 @@
 #include <vector>
 #include <cctype>
 #include <algorithm>
+#include <fcntl.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -35,14 +36,14 @@ int main() {
 
     while (true) {
         cout << "cwushell-> ";
-        cin.getline(input, 250);
+        cin.getline(input, 250); //get user input
 		history.push_back(input);
-        StrTokenizer(input, argv);
-         if (strcmp(argv[0], "exit") == 0) {
+        StrTokenizer(input, argv); //tokenize user input, store in argv array
+        if (strcmp(argv[0], "exit") == 0) {
             break;
         } else if (strcmp(input, "\n") == 0) {
             continue;
-        } else if (strcmp(argv[0], "cd") ==0){
+        } else if (strcmp(argv[0], "cd") ==0){ //if 'cd' command-> execute chdir() system call
             if(argv[1] != nullptr){
                 if(chdir(argv[1]) != 0){
                     perror("chdir");
@@ -63,7 +64,7 @@ void myExecvp(char **argv) {
     int status;
     int childStatus;
     pid = fork();
-    if (pid == 0) {
+    if (pid == 0) { //child process runs the command entered by user
         bool appendMode = false;
         char* outFile = nullptr;
         int pipefd[2] = {0, 0}; // Pipe file descriptors
@@ -85,20 +86,38 @@ void myExecvp(char **argv) {
             }
         }
 
-        if (appendMode) {
-            std::fstream file(outFile, std::ios::app); // Open file in append mode
-            std::string input;
-
-            // Read user input until termination string is entered
-            while (true) {
-                std::getline(std::cin, input);
-                if (std::cin.eof()) {
-                    break;
+            if (appendMode) {
+        
+                //open system call used, file opened in write only + append mode
+                //created if does not exist
+                int fileDescriptor = open(outFile, O_WRONLY | O_CREAT | O_APPEND, 0644); 
+                if (fileDescriptor == -1) {
+                    perror("open");
+                    exit(1);
                 }
-                file << input << std::endl;
-            }
-            file.close();
-            exit(0);
+
+                // Read user input until termination string is entered
+                while (true) {
+                    std::string input;
+                    std::getline(std::cin, input);
+                    if (std::cin.eof()) {
+                        break;
+                    }
+                    input += '\n';
+                    
+                    //input.c_str() passes pointer to character array of user input
+                    ssize_t bytesWritten = write(fileDescriptor, input.c_str(), input.length());
+                    if (bytesWritten == -1) {
+                        perror("write");
+                        close(fileDescriptor);
+                        exit(1);
+                    }
+                }
+
+            //close system call to close the file
+                close(fileDescriptor);
+                exit(0);
+    }
         } else if (strcmp(argv[0], "grep") == 0) {
             // Call the Grep function for the "grep" command
             if (argv[1] != nullptr && argv[2] != nullptr) {
@@ -107,67 +126,55 @@ void myExecvp(char **argv) {
                 cout << "Usage: grep <word> <file>" << endl;
             }
             exit(0);
-        } else {
+        else {
             // Check for pipe operator '|'
             for (int i = 0; argv[i] != nullptr; i++) {
-                if (strcmp(argv[i], "|") == 0) {
-                    argv[i] = nullptr;
+            if (strcmp(argv[i], "|") == 0) {
+                argv[i] = nullptr;
 
-                    // Create pipe
-                    if (pipe(pipefd) == -1) {
-                        perror("pipe");
-                        exit(1);
-                    }
+                // Create pipe
+                if (pipe(pipefd) == -1) {
+                    perror("pipe");
+                    exit(1);
+                }
 
-                    pid_t childpid;
-                    childpid = fork();
-                    if (childpid == 0) {
-                        // Child process
+                pid_t childpid;
+                childpid = fork();
+                if (childpid == 0) {
+                    // Child process
 
-                        // Close read end of the pipe
-                        close(pipefd[0]);
+                    // Close read end of the pipe
+                    close(pipefd[0]);
 
-                        // Duplicate the write end of the pipe to stdout
-                        dup2(pipefd[1], STDOUT_FILENO);
-                        close(pipefd[1]);
+                    // Duplicate the write end of the pipe to stdout
+                    dup2(pipefd[1], STDOUT_FILENO);
+                    close(pipefd[1]);
 
-                        execvp(argv[0], argv);
-                        perror("execvp");
-                        exit(1);
-                    } else if (childpid > 0) {
-                        // Parent process
+                    execvp(argv[0], argv);
+                    perror("execvp");
+                    exit(1);
+                } 
+                else if (childpid > 0) {
+                    // Parent process
 
-                        // Close write end of the pipe
-                        close(pipefd[1]);
+                    // Close write end of the pipe
+                    close(pipefd[1]);
 
-                        // Duplicate the read end of the pipe to stdin
-                        dup2(pipefd[0], STDIN_FILENO);
-                        close(pipefd[0]);
+                    // Duplicate the read end of the pipe to stdin
+                    dup2(pipefd[0], STDIN_FILENO);
+                    close(pipefd[0]);
 
-                        execvp(argv[i + 1], &argv[i + 1]);
-                        perror("execvp");
-                        exit(1);
-                    } else {
-                        perror("fork");
-                        exit(1);
-                    }
+                    execvp(argv[i + 1], &argv[i + 1]);
+                    perror("execvp");
+                    exit(1);
+                } 
+                else {
+                    perror("fork");
+                    exit(1);
                 }
             }
-
-              // Check for 'cd' command
-            if (strcmp(argv[0], "cd") == 0) {
-                if (argv[1] != nullptr) {
-                    if (chdir(argv[1]) != 0) {
-                        perror("chdir");
-                    }
-                } else {
-                    cout << "Usage: cd <directory>" << endl;
-                }
-                exit(0);
-            }
-
-
-
+        }
+         
             // Execute a single command if no pipe is present
             execvp(argv[0], argv);
             perror("execvp");
@@ -176,7 +183,8 @@ void myExecvp(char **argv) {
         }
     } else if (pid < 0) {
         cout << "something went wrong!" << endl;
-    } else {
+    }   
+    else { // parent process
         int status;
         waitpid(pid, &status, 0);
     }
@@ -250,4 +258,3 @@ void Grep(string filePath, string word) {
 	}
 	inputFile.close();
 }
-
