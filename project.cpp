@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <fstream>
 #include <vector>
+#include <cctype>
+#include <algorithm>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -18,6 +20,8 @@ void  StrTokenizer(char *line, char **argv);
 void  myExecvp(char **argv);
 void GetEnv();
 void PrintHistory();
+void Grep(string filePath, string word);
+bool isWordInSentence(const string& sentence, const string& word);
 
 vector<string> history;
 
@@ -95,6 +99,14 @@ void myExecvp(char **argv) {
             }
             file.close();
             exit(0);
+        } else if (strcmp(argv[0], "grep") == 0) {
+            // Call the Grep function for the "grep" command
+            if (argv[1] != nullptr && argv[2] != nullptr) {
+                Grep(argv[2], argv[1]);
+            } else {
+                cout << "Usage: grep <word> <file>" << endl;
+            }
+            exit(0);
         } else {
             // Check for pipe operator '|'
             for (int i = 0; argv[i] != nullptr; i++) {
@@ -154,6 +166,8 @@ void myExecvp(char **argv) {
                 exit(0);
             }
 
+
+
             // Execute a single command if no pipe is present
             execvp(argv[0], argv);
             perror("execvp");
@@ -202,6 +216,38 @@ void GetEnv()
 void PrintHistory() {
     int start = (history.size() > 10) ? (history.size() - 10) : 0;
     for (size_t i = start; i < history.size(); i++) {
-        std::cout << history[i] << std::endl;
+        cout << history[i] << endl;
     }
 }
+
+
+bool isWordInSentence(const string& sentence, const string& word) {
+    // Convert the sentence and word to lowercase for case-insensitive comparison
+    string lowercaseSentence = sentence;
+    string lowercaseWord = word;
+    
+	// transform(lowercaseSentence.begin(), lowercaseSentence.end(), lowercaseSentence.begin(), ::tolower);
+	transform(lowercaseSentence.begin(), lowercaseSentence.end(), lowercaseSentence.begin(), ::tolower);
+    transform(lowercaseWord.begin(), lowercaseWord.end(), lowercaseWord.begin(), ::tolower);
+
+    // Check if the word exists in the sentence
+    size_t found = lowercaseSentence.find(lowercaseWord);
+    return (found != string::npos);
+}
+
+void Grep(string filePath, string word) {
+	ifstream inputFile(filePath);
+	if (inputFile.is_open()) {
+		string line;
+		while (getline(inputFile, line)) {
+			if (isWordInSentence(line, word)) {
+				cout << line << endl;
+			}
+
+		}
+	} else {
+		cout << "File was not opened" << endl;
+	}
+	inputFile.close();
+}
+
