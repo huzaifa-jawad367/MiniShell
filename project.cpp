@@ -15,7 +15,6 @@
 using namespace std;
 void StrTokenizer(char *line, char **argv);
 void myExecvp(char **argv);
-int GetEnv();
 
 
 int main() {
@@ -29,11 +28,20 @@ int main() {
         cout << "cwushell-> ";
         cin.getline(input, 250);
         StrTokenizer(input, argv);
-        if (strcmp(argv[0], "exit") == 0) {
+         if (strcmp(argv[0], "exit") == 0) {
             break;
         } else if (strcmp(input, "\n") == 0) {
             continue;
-        } else {
+        } else if (strcmp(argv[0], "cd") ==0){
+            if(argv[1] != nullptr){
+                if(chdir(argv[1]) != 0){
+                    perror("chdir");
+                } else{
+                    cout << "Directory changed." << endl;
+                }
+            }
+        } 
+        else {
             myExecvp(argv);
         }
     }
@@ -121,6 +129,18 @@ void myExecvp(char **argv) {
                 }
             }
 
+              // Check for 'cd' command
+            if (strcmp(argv[0], "cd") == 0) {
+                if (argv[1] != nullptr) {
+                    if (chdir(argv[1]) != 0) {
+                        perror("chdir");
+                    }
+                } else {
+                    cout << "Usage: cd <directory>" << endl;
+                }
+                exit(0);
+            }
+
             // Execute a single command if no pipe is present
             execvp(argv[0], argv);
             perror("execvp");
@@ -147,19 +167,3 @@ void StrTokenizer(char *input, char **argv)
     *argv = NULL;
 }
 
-int GetEnv()
-{
-    char *path2;
-    char *arr2[250];
-    char *Tokenized ;
-    path2 = getenv("PATH");
-    Tokenized = strtok(path2, ":");
-    int k = 0;
-    while(Tokenized != NULL)
-    {
-        arr2[k] = Tokenized;
-        Tokenized = strtok(NULL, ":");
-        k++;
-    }
-    arr2[k] = NULL;
-}
