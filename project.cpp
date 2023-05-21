@@ -157,11 +157,7 @@ void myExecvp(char **argv) {
             // Execute a single command if no pipe is present
             execvp(argv[0], argv);
             perror("execvp");
-		int result = execvp(argv[0], argv);
-		if (result == -1) {
-			perror("execvp");
-			history.pop_back();
-		}
+
             exit(1);
         }
     } else if (pid < 0) {
@@ -172,6 +168,7 @@ void myExecvp(char **argv) {
     }
 
 }
+
 
 void StrTokenizer(char *input, char **argv) {
     char *stringTokenized;
