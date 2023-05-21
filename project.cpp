@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <stdio.h>
-
+#include <vector>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -17,7 +17,10 @@
 using namespace std;
 void  StrTokenizer(char *line, char **argv);
 void  myExecvp(char **argv);
-int GetEnv();
+void GetEnv();
+void PrintHistory();
+
+vector<string> history;
 
 int main()
 {
@@ -32,6 +35,7 @@ int main()
 	{
 		cout<< "cwushell-> ";
 		cin.getline(input,250);
+		history.push_back(input);
 		StrTokenizer(input, argv);  
 		if (strcmp(input, "exit") == 0)  
 
@@ -54,6 +58,12 @@ void  myExecvp(char **argv)
 	pid = fork();
 	if(pid == 0)
 	{
+		if (strcmp(argv[0], "history") == 0)
+		{
+			PrintHistory();
+			return;
+		}
+		
 		childStatus = execvp(*argv, argv);
 		if (childStatus < 0){
 			cout<<"ERROR:wrong input"<<endl;
@@ -61,6 +71,7 @@ void  myExecvp(char **argv)
 		exit(0);
 
 	}
+
 	else if(pid < 0)
 	{
 		cout<< "somthing went wrong!"<<endl;
@@ -71,6 +82,7 @@ void  myExecvp(char **argv)
 		waitpid(pid, &status , 0);
 
 	}
+
 }
 
 void StrTokenizer(char *input, char **argv)
@@ -86,7 +98,7 @@ void StrTokenizer(char *input, char **argv)
 	*argv = NULL;
 }
 
-int GetEnv()
+void GetEnv()
 {
 	char *path2;
 	char *arr2[250];
@@ -101,4 +113,11 @@ int GetEnv()
 		k++;
 	}
 	arr2[k] = NULL;
+}
+
+void PrintHistory() {
+    int start = (history.size() > 10) ? (history.size() - 10) : 0;
+    for (size_t i = start; i < history.size(); i++) {
+        std::cout << history[i] << std::endl;
+    }
 }
