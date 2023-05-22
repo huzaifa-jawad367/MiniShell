@@ -7,7 +7,10 @@
 #include <vector>
 #include <cctype>
 #include <algorithm>
-#include <fcntl.h>
+#include <filesystem>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cstdlib> 
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -23,6 +26,10 @@ void GetEnv();
 void PrintHistory();
 void Grep(string filePath, string word);
 bool isWordInSentence(const string& sentence, const string& word);
+void renameFile(const string& filePath, const string& newName);
+void createFile(const string& filePath);
+bool changeFileOwner(const std::string& filePath, const uid_t& userId, const gid_t& groupId);
+bool changeFilePermissions(const string& filePath, const mode_t& permissions);
 
 vector<string> history;
 
@@ -36,14 +43,14 @@ int main() {
 
     while (true) {
         cout << "cwushell-> ";
-        cin.getline(input, 250); //get user input
+        cin.getline(input, 250);
 		history.push_back(input);
-        StrTokenizer(input, argv); //tokenize user input, store in argv array
-        if (strcmp(argv[0], "exit") == 0) {
+        StrTokenizer(input, argv);
+         if (strcmp(argv[0], "exit") == 0) {
             break;
         } else if (strcmp(input, "\n") == 0) {
             continue;
-        } else if (strcmp(argv[0], "cd") ==0){ //if 'cd' command-> execute chdir() system call
+        } else if (strcmp(argv[0], "cd") ==0){
             if(argv[1] != nullptr){
                 if(chdir(argv[1]) != 0){
                     perror("chdir");
@@ -64,7 +71,7 @@ void myExecvp(char **argv) {
     int status;
     int childStatus;
     pid = fork();
-    if (pid == 0) { //child process runs the command entered by user
+    if (pid == 0) {
         bool appendMode = false;
         char* outFile = nullptr;
         int pipefd[2] = {0, 0}; // Pipe file descriptors
@@ -75,6 +82,43 @@ void myExecvp(char **argv) {
 			PrintHistory();
 			return;
 		}
+        // call mv to rename or move file (havent tested moving)
+        else if (strcmp(argv[0], "mv") == 0)
+		{
+			renameFile(string(argv[1]), string(argv[2]));
+			return;
+		}
+        // call touch to create file
+        else if (strcmp(argv[0], "touch") == 0)
+		{
+			createFile(argv[1]);
+			return;
+		}
+
+        // call chown to change owners
+        else if (strcmp(argv[0], "chown") == 0)
+		{
+            uid_t userId = std::stoi(argv[2]);
+            gid_t groupId = std::stoi(argv[3]);
+
+            // Use the converted uid_t and gid_t values as needed
+            std::cout << "User ID: " << userId << std::endl;
+            std::cout << "Group ID: " << groupId << std::endl;
+            
+            
+			changeFileOwner(argv[1], userId, groupId);
+			return;
+		}
+
+        // call chmod to change permission
+        else if (strcmp(argv[0], "chmod") == 0)
+		{
+            // mode_t permissions = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+            mode_t permissions = strtol(argv[2], nullptr, 8);
+			changeFilePermissions(argv[1], permissions);
+			return;
+		}
+
 
         // Check for '>>' operator
         for (int i = 0; argv[i] != NULL; i++) {
@@ -86,38 +130,20 @@ void myExecvp(char **argv) {
             }
         }
 
-            if (appendMode) {
-        
-                //open system call used, file opened in write only + append mode
-                //created if does not exist
-                int fileDescriptor = open(outFile, O_WRONLY | O_CREAT | O_APPEND, 0644); 
-                if (fileDescriptor == -1) {
-                    perror("open");
-                    exit(1);
-                }
+        if (appendMode) {
+            std::fstream file(outFile, std::ios::app); // Open file in append mode
+            std::string input;
 
-                // Read user input until termination string is entered
-                while (true) {
-                    std::string input;
-                    std::getline(std::cin, input);
-                    if (std::cin.eof()) {
-                        break;
-                    }
-                    input += '\n';
-                    
-                    //input.c_str() passes pointer to character array of user input
-                    ssize_t bytesWritten = write(fileDescriptor, input.c_str(), input.length());
-                    if (bytesWritten == -1) {
-                        perror("write");
-                        close(fileDescriptor);
-                        exit(1);
-                    }
+            // Read user input until termination string is entered
+            while (true) {
+                std::getline(std::cin, input);
+                if (std::cin.eof()) {
+                    break;
                 }
-
-            //close system call to close the file
-                close(fileDescriptor);
-                exit(0);
-    }
+                file << input << std::endl;
+            }
+            file.close();
+            exit(0);
         } else if (strcmp(argv[0], "grep") == 0) {
             // Call the Grep function for the "grep" command
             if (argv[1] != nullptr && argv[2] != nullptr) {
@@ -126,55 +152,67 @@ void myExecvp(char **argv) {
                 cout << "Usage: grep <word> <file>" << endl;
             }
             exit(0);
-        else {
+        } else {
             // Check for pipe operator '|'
             for (int i = 0; argv[i] != nullptr; i++) {
-            if (strcmp(argv[i], "|") == 0) {
-                argv[i] = nullptr;
+                if (strcmp(argv[i], "|") == 0) {
+                    argv[i] = nullptr;
 
-                // Create pipe
-                if (pipe(pipefd) == -1) {
-                    perror("pipe");
-                    exit(1);
-                }
+                    // Create pipe
+                    if (pipe(pipefd) == -1) {
+                        perror("pipe");
+                        exit(1);
+                    }
 
-                pid_t childpid;
-                childpid = fork();
-                if (childpid == 0) {
-                    // Child process
+                    pid_t childpid;
+                    childpid = fork();
+                    if (childpid == 0) {
+                        // Child process
 
-                    // Close read end of the pipe
-                    close(pipefd[0]);
+                        // Close read end of the pipe
+                        close(pipefd[0]);
 
-                    // Duplicate the write end of the pipe to stdout
-                    dup2(pipefd[1], STDOUT_FILENO);
-                    close(pipefd[1]);
+                        // Duplicate the write end of the pipe to stdout
+                        dup2(pipefd[1], STDOUT_FILENO);
+                        close(pipefd[1]);
 
-                    execvp(argv[0], argv);
-                    perror("execvp");
-                    exit(1);
-                } 
-                else if (childpid > 0) {
-                    // Parent process
+                        execvp(argv[0], argv);
+                        perror("execvp");
+                        exit(1);
+                    } else if (childpid > 0) {
+                        // Parent process
 
-                    // Close write end of the pipe
-                    close(pipefd[1]);
+                        // Close write end of the pipe
+                        close(pipefd[1]);
 
-                    // Duplicate the read end of the pipe to stdin
-                    dup2(pipefd[0], STDIN_FILENO);
-                    close(pipefd[0]);
+                        // Duplicate the read end of the pipe to stdin
+                        dup2(pipefd[0], STDIN_FILENO);
+                        close(pipefd[0]);
 
-                    execvp(argv[i + 1], &argv[i + 1]);
-                    perror("execvp");
-                    exit(1);
-                } 
-                else {
-                    perror("fork");
-                    exit(1);
+                        execvp(argv[i + 1], &argv[i + 1]);
+                        perror("execvp");
+                        exit(1);
+                    } else {
+                        perror("fork");
+                        exit(1);
+                    }
                 }
             }
-        }
-         
+
+              // Check for 'cd' command
+            if (strcmp(argv[0], "cd") == 0) {
+                if (argv[1] != nullptr) {
+                    if (chdir(argv[1]) != 0) {
+                        perror("chdir");
+                    }
+                } else {
+                    cout << "Usage: cd <directory>" << endl;
+                }
+                exit(0);
+            }
+
+
+
             // Execute a single command if no pipe is present
             execvp(argv[0], argv);
             perror("execvp");
@@ -183,8 +221,7 @@ void myExecvp(char **argv) {
         }
     } else if (pid < 0) {
         cout << "something went wrong!" << endl;
-    }   
-    else { // parent process
+    } else {
         int status;
         waitpid(pid, &status, 0);
     }
@@ -221,6 +258,7 @@ void GetEnv()
 	arr2[k] = NULL;
 }
 
+// history command
 void PrintHistory() {
     int start = (history.size() > 10) ? (history.size() - 10) : 0;
     for (size_t i = start; i < history.size(); i++) {
@@ -243,6 +281,7 @@ bool isWordInSentence(const string& sentence, const string& word) {
     return (found != string::npos);
 }
 
+// GREP command
 void Grep(string filePath, string word) {
 	ifstream inputFile(filePath);
 	if (inputFile.is_open()) {
@@ -257,4 +296,50 @@ void Grep(string filePath, string word) {
 		cout << "File was not opened" << endl;
 	}
 	inputFile.close();
+}
+
+// rename file "mv" command
+void renameFile(const string& filePath, const string& newName) {
+    filesystem::path oldPath(filePath);
+    filesystem::path newPath = oldPath.parent_path() / newName;
+  
+    try {
+        filesystem::rename(oldPath, newPath);
+        cout << "File renamed successfully." << endl;
+    } catch (filesystem::filesystem_error& e) {
+        cerr << "File renaming failed: " << e.what() << endl;
+    }
+}
+
+// create file command
+void createFile(const string& filePath) {
+    ofstream file(filePath);  // Open file in output mode
+
+    if (file) {
+        cout << "File created successfully." << endl;
+        file.close();  // Close the file
+    } else {
+        cerr << "Failed to create the file." << endl;
+    }
+}
+
+// chown command
+bool changeFileOwner(const string& filePath, const uid_t& userId, const gid_t& groupId) {
+    if (chown(filePath.c_str(), userId, groupId) == 0) {
+        cout << "File owner changed successfully." << endl;
+        return true;
+    } else {
+        cerr << "Failed to change file owner." << endl;
+        return false;
+    }
+}
+
+bool changeFilePermissions(const string& filePath, const mode_t& permissions) {
+    if (chmod(filePath.c_str(), permissions) == 0) {
+        cout << "File permissions changed successfully." << endl;
+        return true;
+    } else {
+        cerr << "Failed to change file permissions." << endl;
+        return false;
+    }
 }
