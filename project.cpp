@@ -24,7 +24,7 @@ void PrintHistory();
 void Grep(string filePath, string word);
 bool isWordInSentence(const string& sentence, const string& word);
 void renameFile(const string& filePath, const string& newName);
-
+void createFile(const string& filePath);
 
 vector<string> history;
 
@@ -81,6 +81,12 @@ void myExecvp(char **argv) {
         if (strcmp(argv[0], "mv") == 0)
 		{
 			renameFile(string(argv[1]), string(argv[2]));
+			return;
+		}
+
+        if (strcmp(argv[0], "touch") == 0)
+		{
+			createFile(argv[1]);
 			return;
 		}
 
@@ -269,5 +275,16 @@ void renameFile(const string& filePath, const string& newName) {
         cout << "File renamed successfully." << endl;
     } catch (filesystem::filesystem_error& e) {
         cerr << "File renaming failed: " << e.what() << endl;
+    }
+}
+
+void createFile(const string& filePath) {
+    ofstream file(filePath);  // Open file in output mode
+
+    if (file) {
+        cout << "File created successfully." << endl;
+        file.close();  // Close the file
+    } else {
+        cerr << "Failed to create the file." << endl;
     }
 }
